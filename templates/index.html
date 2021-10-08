@@ -73,63 +73,98 @@
         }
 
         function postArticle() {
-            let title = $('#title-url').val()
-            let content = $('#content-url').val()
+            let url = $("#post-url").val();
+            let comment = $("#post-comment").val();
 
+            // 2. memo에 POST 방식으로 메모 생성 요청하기
             $.ajax({
                 type: "POST",
                 url: "/post",
-                data: {title_give: title, content_give: content},
+                data: {title: url, content: comment},
                 success: function (response) { // 성공하면
-                    alert(response["msg"]);
-                    window.location.reload()
+                    if (response["result"] == "success") {
+                        alert("포스팅 성공!");
+                        // 3. 성공 시 페이지 새로고침하기
+                        window.location.reload();
+                    } else {
+                        alert("서버 오류!");
+                    }
                 }
             })
         }
 
         function showArticles() {
             $.ajax({
-                    type: "GET",
-                    url: "/post",
-                    data: {},
-                    success: function (response) {
-                        let memos = response['all_memo']
-                        for (let i = 0; i <memos.length; i++){
-                            let title = memos[i]['title']
-                            let content = memos[i]['content']
-                            let reg_date = memos[i]['reg_date']
-
-                            let temp_html = `<tr>
-                                              <th scope="col">#</th>
-                                              <th scope="col">"${title}"</th>
-                                              <th scope="col">"${reg_date}"</th>
-                                              <button type="button" class="btn btn-danger" onclick="delete_post()">삭제</button>
-                                            </tr>`
-
-                            $('#list-post').append(temp_html)
-
-                        }
-                    }
-                })
-        }
-
-        function delete_post(title) {
-            $.ajax({
-                type: 'POST',
-                url: '/delete_post',
-                data: {title_give: title},
+                type: "GET",
+                url: "/post",
+                data: {},
                 success: function (response) {
-                    alert(response['msg']);
-                    window.location.reload()
+                    let posts = response["posts"];
+                    for (let i = 0; i < posts.length; i++) {
+                        makeListPost(posts[i], i);
+                    }
                 }
-            });
+            })
         }
-        function makeListPost(post, index) {
 
+        function makeListPost(post, index) {
+            let tempHtml = ` <tr>
+                      <th scope="row">${index + 1}</th>
+                      <th>${post['title']}</th>
+                      <th>${post['reg_date']}</th>
+                      <th>${post['reg_date']}</th>
+                      <th><button type="button" class="btn btn-danger" onclick="deleteArticle(${post['idx']})">삭제</button></th>
+                      <th><button type="button" class="btn btn-primary" onclick="postupdate()">수정</button></th>
+                      </tr>
+                    `;
+            $("#list-post").append(tempHtml);
         }
 
         function deleteArticle(idx) {
+            $.ajax({
+                type: "DELETE",
+                url: `/post?idx=${idx}`,
+                success: function (response) { // 성공하면
+                    if (response["result"] == "success") {
+                        alert("삭제 성공!");
+                        // 3. 성공 시 페이지 새로고침하기
+                        window.location.reload();
+                    } else {
+                        alert("서버 오류!");
+                    }
+                }
+            })
+        }
+        function postupdate() {
+            if ($("#post-box").css("display") == "block") {
+                // post-box를 가리고
+                $("#post-box").hide();
+                // 다시 버튼을 클릭하면, 박스 열기를 할 수 있게 텍스트 바꿔두기
+                $("#btn-post-box").text("포스팅 박스 열기");
+            } else {
+                // 아니면(눈에 보이지 않으면) post-box를 펴라
+                $("#post-box").show();
+                // 다시 버튼을 클릭하면, 박스 닫기를 할 수 있게 텍스트 바꿔두기
+                $("#btn-post-box").text("포스팅 박스 닫기");
+            }
+            let url = $("#post-url").val();
+            let comment = $("#post-comment").val();
 
+            // 2. memo에 POST 방식으로 메모 생성 요청하기
+            $.ajax({
+                type: "UPDATE",
+                url: "/post",
+                data: {title: url, content: comment},
+                success: function (response) { // 성공하면
+                    if (response["result"] == "success") {
+                        alert("수정 성공!");
+                        // 3. 성공 시 페이지 새로고침하기
+                        window.location.reload();
+                    } else {
+                        alert("서버 오류!");
+                    }
+                }
+            })
         }
     </script>
 
@@ -148,12 +183,12 @@
     <div id="post-box" class="form-post" style="display:none">
         <div>
             <div class="form-group">
-                <label for="title-url">제목</label>
-                <input id="title-url" class="form-control" placeholder="">
+                <label for="post-url">제목</label>
+                <input id="post-url" class="form-control" placeholder="">
             </div>
             <div class="form-group">
-                <label for="content-url">간단한 내용</label>
-                <textarea id="content-url" class="form-control" rows="2"></textarea>
+                <label for="post-comment">간단한 내용</label>
+                <textarea id="post-comment" class="form-control" rows="2"></textarea>
             </div>
             <button type="button" class="btn btn-primary" onclick="postArticle()">기사저장</button>
         </div>
@@ -162,15 +197,14 @@
               <thead>
                 <tr>
                   <th scope="col">#</th>
-                  <th scope="col">타이틀</th>
+                  <th scope="col">제목</th>
                   <th scope="col">날짜</th>
+                  <th scope="col">조회</th>
                   <th scope="col">삭제</th>
+                  <th scope="col">수정</th>
                 </tr>
               </thead>
               <tbody id="list-post">
-                <tr>
-
-                </tr>
               </tbody>
     </table>
 </div>

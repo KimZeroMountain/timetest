@@ -1,10 +1,7 @@
+from datetime import datetime
+
 from flask import Flask, render_template, jsonify, request
 from pymongo import MongoClient
-from datetime import datetime
-import time
-
-time.time()
-1586337535.9475923
 
 app = Flask(__name__)
 
@@ -19,38 +16,50 @@ def index():
 
 @app.route('/post', methods=['POST'])
 def save_post():
+    title = request.form.get('title')
+    content = request.form.get('content')
+    post_count = db.post.count()
+    if post_count == 0:
+        max_value = 1
+    else:
+        max_value = db.post.find_one(sort=[("idx", -1)])['idx'] + 1
+    look = request.form.get('title')
 
-    title_receive = request.form['title_give']
-    content_receive = request.form['content_give']
-    reg_date = time.strftime('%Y.%m.%d %H:%M:%S')
-
-    doc = {
-        'title' : title_receive,
-        'content' : content_receive,
-        'reg_date' : reg_date
+    post = {
+        'idx': max_value,
+        'title': title,
+        'content': content,
+        'look': look,
+        'reg_date': datetime.now()
     }
-
-    db.memo.insert_one(doc)
-
-
-    return jsonify({'msg':'포스팅 성공!'})
+    db.post.insert_one(post)
+    return {"result": "success"}
 
 
 @app.route('/post', methods=['GET'])
 def get_post():
-    memos = list(db.memo.find({}, {'_id': False}))
+    posts = list(db.post.find({}, {'_id': False}).sort([("reg_date", -1)]))
+    for a in posts:
+        a['reg_date'] = a['reg_date'].strftime('%Y.%m.%d %H:%M:%S')
 
-    return jsonify({'all_memo': memos})
+    return jsonify({"posts": posts})
 
 
-
-@app.route('/delete_post', methods=['DELETE'])
+@app.route('/post', methods=['DELETE'])
 def delete_post():
-    delate_memo = request.form['title_give']
+    idx = request.args.get('idx')
+    db.post.delete_one({'idx': int(idx)})
+    return {"result": "success"}
 
-    db.memo.delete_one({'title': delate_memo})
-
-    return jsonify({'msg': '삭제 성공!'})
+@app.route('/post', methods=['UPDATE'])
+def update_post():
+    title = request.form.get('title')
+    content = request.form.get('content')
+    post = {'title': title,
+            'content': content
+            }
+    db.post.update_one(post)
+    return {"result": "success"}
 
 
 if __name__ == "__main__":
