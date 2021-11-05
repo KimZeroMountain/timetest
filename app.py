@@ -1,13 +1,46 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import wraps
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response, g
 from pymongo import MongoClient
+import jwt
+import bcrypt
 
 app = Flask(__name__)
 
 client = MongoClient("mongodb://localhost:27017/")
 db = client.dbStock
+secret = "secrete"
+algorithm = "HS256"
 
+def login_check(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        access_token = request.headers.get("Authorization")
+        if access_token is not None:
+            try:
+                payload = jwt.decode(access_token, secret, "HS256")
+            except jwt.InvalidTokenError:
+                return Response(status=401)
+
+            if payload is None:
+                return Response(status=401)
+
+            user_id = payload["id"]
+            g.user_id = user_id
+            g.user = get_user_info(user_id)
+        else:
+            g.user_id = "비회원"
+            g.user = None
+            print("access_token is empty")
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def get_user_info(user_id):
+    return db.user.find_one({"id": user_id})
 
 @app.route('/')
 def index():
@@ -15,6 +48,7 @@ def index():
 
 
 @app.route('/article', methods=['POST'])
+@login_check
 def save_post():
     title = request.form.get('title')
     content = request.form.get('content')
@@ -29,14 +63,16 @@ def save_post():
         'title': title,
         'content': content,
         'read_count': 0,
+        'writer': (g.user_id if hasattr(g, 'user_id') else ''),
         'reg_date': datetime.now()
     }
     db.article.insert_one(post)
     return {"result": "success"}
 
 
-@app.route('/articles', methods=['GET'])
-def get_posts():
+@app.route('/articles/<type>', methods=['GET'])
+@login_check
+def get_posts(type):
     order = request.args.get('order')
     per_page = request.args.get('perPage')
     cur_page = request.args.get('curPage')
@@ -45,9 +81,12 @@ def get_posts():
     if search_title is not None:
         search_condition = {"title": {"$regex": search_title}}
 
+    if type == 'my':
+        search_condition['writer'] = g.user_id
+
     limit = int(per_page)
     skip = limit * (int(cur_page) - 1)
-    total_count = db.article.find(search_condition).count()
+    total_count = db.article.count_documents(search_condition)
     total_page = int(total_count / limit) + (1 if total_count % limit > 0 else 0)
 
     if order == "desc":
@@ -91,7 +130,7 @@ def update_post():
     title = request.form.get('title')
     content = request.form.get('content')
     db.article.update_one({'idx': int(idx)}, {'$set': {'title': title, 'content': content}})
-    return {"result": "success"}
+    return jsonify({"result": "success"})
 
 
 @app.route('/article/<idx>', methods=['PUT'])
@@ -100,6 +139,54 @@ def update_read_count(idx):
     article = db.article.find_one({'idx': int(idx)}, {'_id': False})
     return jsonify({"article": article})
 
+
+@app.route('/join', methods=['POST'])
+def create_user():
+    id = request.form.get('id')
+    pwd = request.form.get('pwd')
+    if get_user_info(id) is not None:
+        return Response(status=423)
+
+    db.user.insert_one({"id": id, "pwd": bcrypt.hashpw(pwd.encode('UTF-8'), bcrypt.gensalt())})
+    return jsonify({"result": "success"})
+
+
+@app.route('/login', methods=['POST'])
+def login_user():
+    id = request.form.get('id')
+    pwd = request.form.get('pwd')
+    user = db.user.find_one({"id": id})
+
+    if get_user_info(id) is None:
+        return Response(status=401)
+
+    if bcrypt.checkpw(pwd.encode('utf-8'), user['pwd']):
+        payload = {
+            "id": id,
+            "exp": datetime.utcnow() + timedelta(seconds=60 * 60 * 24)
+        }
+        token = jwt.encode(payload, secret, "HS256")
+        return jsonify({"result": "success", "token": token})
+    else:
+        return Response(status=401)
+
+@app.route('/comments', methods=['POST'])
+def comment(idx):
+    comments_receive = request.form['comments_give']
+
+    doc = {
+        'comments' : comments_receive
+    }
+    comments = db.article.find_one({'idx': int(idx)}, {'_id': False})
+    db.article.insert_one(doc)
+    return jsonify({'msg':'저장되었습니다!!'})
+
+@app.route('/comments', methods=['GET'])
+def showComments():
+
+    comments = list(db.article.find({'comments'}, {'_id': False}))
+
+    return jsonify({'all_comments':comments})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
